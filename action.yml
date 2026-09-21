@@ -1,0 +1,99 @@
+name: Register deployment
+description: >
+  Register a deployment event in DeploymentViewer via POST /api/deployments.
+  Use as: sysadminspl/register-deployment-action@v1
+
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  api_url:
+    description: Base URL of DeploymentViewer (no trailing slash), e.g. https://deployments.sysadmins.pl
+    required: true
+  api_key:
+    description: Workspace API key (Bearer). Prefer secrets.* — never commit.
+    required: true
+  application_name:
+    description: Application name as defined in the workspace
+    required: true
+  environment_name:
+    description: Environment name as defined in the workspace
+    required: true
+  version:
+    description: Version or image tag shown in DeploymentViewer
+    required: true
+  commit_hash:
+    description: Git commit SHA (defaults to github.sha)
+    required: false
+    default: ""
+  deployer_identity:
+    description: Who deployed (defaults to github.actor / github.workflow)
+    required: false
+    default: ""
+  deployed_at:
+    description: ISO-8601 UTC timestamp (defaults to now)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Register deployment
+      shell: bash
+      env:
+        API_URL: ${{ inputs.api_url }}
+        API_KEY: ${{ inputs.api_key }}
+        APPLICATION_NAME: ${{ inputs.application_name }}
+        ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+        VERSION: ${{ inputs.version }}
+        COMMIT_HASH: ${{ inputs.commit_hash }}
+        DEPLOYER_IDENTITY: ${{ inputs.deployer_identity }}
+        DEPLOYED_AT: ${{ inputs.deployed_at }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_WORKFLOW: ${{ github.workflow }}
+      run: |
+        set -euo pipefail
+
+        COMMIT_HASH="${COMMIT_HASH:-$GITHUB_SHA}"
+        DEPLOYER_IDENTITY="${DEPLOYER_IDENTITY:-${GITHUB_ACTOR} via ${GITHUB_WORKFLOW}}"
+        # API requires exact Date#toISOString() form (with milliseconds).
+        if [ -z "${DEPLOYED_AT}" ]; then
+          DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+        fi
+        API_URL="${API_URL%/}"
+
+        BODY=$(jq -n \
+          --arg application_name "$APPLICATION_NAME" \
+          --arg environment_name "$ENVIRONMENT_NAME" \
+          --arg deployed_at "$DEPLOYED_AT" \
+          --arg deployer_identity "$DEPLOYER_IDENTITY" \
+          --arg version "$VERSION" \
+          --arg commit_hash "$COMMIT_HASH" \
+          '{
+            application_name: $application_name,
+            environment_name: $environment_name,
+            deployed_at: $deployed_at,
+            deployer_identity: $deployer_identity,
+            version: $version,
+            commit_hash: $commit_hash
+          }')
+
+        echo "POST ${API_URL}/api/deployments"
+        echo "  application=${APPLICATION_NAME} environment=${ENVIRONMENT_NAME} version=${VERSION}"
+
+        HTTP_CODE=$(curl -sS -o /tmp/dv-register-response.json -w "%{http_code}" \
+          -X POST "${API_URL}/api/deployments" \
+          -H "Authorization: Bearer ${API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "$BODY")
+
+        echo "Response HTTP ${HTTP_CODE}:"
+        cat /tmp/dv-register-response.json || true
+        echo
+
+        if [ "$HTTP_CODE" != "201" ]; then
+          echo "::error::Deployment registration failed (HTTP ${HTTP_CODE})"
+          exit 1
+        fi
