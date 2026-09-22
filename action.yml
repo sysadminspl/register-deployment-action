@@ -35,6 +35,12 @@ inputs:
     description: ISO-8601 UTC timestamp (defaults to now)
     required: false
     default: ""
+  pipeline_url:
+    description: >
+      HTTPS URL of the CI run / pipeline. When omitted, defaults to the current
+      GitHub Actions run URL. Shown as a clickable link in DeploymentViewer.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -50,9 +56,13 @@ runs:
         COMMIT_HASH: ${{ inputs.commit_hash }}
         DEPLOYER_IDENTITY: ${{ inputs.deployer_identity }}
         DEPLOYED_AT: ${{ inputs.deployed_at }}
+        PIPELINE_URL: ${{ inputs.pipeline_url }}
         GITHUB_SHA: ${{ github.sha }}
         GITHUB_ACTOR: ${{ github.actor }}
         GITHUB_WORKFLOW: ${{ github.workflow }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
         set -euo pipefail
 
@@ -64,6 +74,11 @@ runs:
         fi
         API_URL="${API_URL%/}"
 
+        # Default pipeline_url to this Actions run when the input was left empty.
+        if [ -z "${PIPELINE_URL}" ]; then
+          PIPELINE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+        fi
+
         BODY=$(jq -n \
           --arg application_name "$APPLICATION_NAME" \
           --arg environment_name "$ENVIRONMENT_NAME" \
@@ -71,6 +86,7 @@ runs:
           --arg deployer_identity "$DEPLOYER_IDENTITY" \
           --arg version "$VERSION" \
           --arg commit_hash "$COMMIT_HASH" \
+          --arg pipeline_url "$PIPELINE_URL" \
           '{
             application_name: $application_name,
             environment_name: $environment_name,
@@ -78,7 +94,7 @@ runs:
             deployer_identity: $deployer_identity,
             version: $version,
             commit_hash: $commit_hash
-          }')
+          } + (if $pipeline_url != "" then {pipeline_url: $pipeline_url} else {} end)')
 
         echo "POST ${API_URL}/api/deployments"
         echo "  application=${APPLICATION_NAME} environment=${ENVIRONMENT_NAME} version=${VERSION}"

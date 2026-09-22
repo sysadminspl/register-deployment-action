@@ -13,9 +13,11 @@ Public GitHub Action that registers a deployment in [DeploymentViewer](https://g
     environment_name: production
     version: ${{ github.ref_name }}
     commit_hash: ${{ github.sha }}
+    # optional — defaults to this GitHub Actions run URL
+    # pipeline_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 ```
 
-Pin production workflows to a major tag (`@v1`) or an exact release (`@v1.0.0`).
+Pin production workflows to a major tag (`@v1`) or an exact release (`@v1.0.0` / `@v1.1.0`).
 
 ## Inputs
 
@@ -29,8 +31,10 @@ Pin production workflows to a major tag (`@v1`) or an exact release (`@v1.0.0`).
 | `commit_hash` | no | Defaults to `github.sha` |
 | `deployer_identity` | no | Defaults to `actor via workflow` |
 | `deployed_at` | no | ISO-8601 UTC; defaults to now |
+| `pipeline_url` | no | HTTPS link to the CI run. Defaults to this GitHub Actions run URL. Shown as a clickable link in DeploymentViewer. |
 
 ## Prerequisites
 
 1. In DeploymentViewer: application + environment exist and are linked.
 2. Create a workspace API key; store it as a GitHub Actions secret (e.g. `DEPLOYMENT_VIEWER_API_KEY`).
+3. DeploymentViewer must be running a version that accepts optional `pipeline_url` on `POST /api/deployments`.
